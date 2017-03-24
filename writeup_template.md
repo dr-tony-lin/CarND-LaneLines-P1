@@ -1,47 +1,34 @@
-#**Finding Lane Lines on the Road** 
-
-##Writeup Template
-
-###You can use this file as a template for your writeup if you want to submit it as a markdown file. But feel free to use some other method and submit a pdf if you prefer.
-
----
-
-**Finding Lane Lines on the Road**
-
+# Overview
 The goals / steps of this project are the following:
-* Make a pipeline that finds lane lines on the road
-* Reflect on your work in a written report
 
+Make a pipeline that finds lane lines on the road
+Reflect on your work in a written report
 
-[//]: # (Image References)
+# The Approach
+In order to avoid issues caused by shadows, marks and unexpected objects, HSV colorspace for lane detection. In most scenarios, lanes on road or highways are marked using white and yellow colors. By filtering the hue portion of the HSV colorspace for white and yellow regions, the algorithm works much better with shadow conditions. The lane detection pipeline works as follows:
 
-[image1]: ./examples/grayscale.jpg "Grayscale"
+## Tghe Pipeline
+1. Convert image from RGB colorspace to HSV colorspace using cv2.cvtColor()
+2. Filter the converted HSV image with white and yellow color using cv2.inRanges() with white and yellow HSV color ranges. This results in a boolean mask that can be used to extract the white and yellow regions of the image
+3. Mask the original image with the resulting mask
+4. Filter the image using gaussian filter of a kernal size 5
+5. Perform Canny filter to extract the contour
+6. Mask off the resulting contour image with ROI
+7. Perform Hough transformation to yield a set of lane lines
+8. Class the lines for left and right lanes
+9. Fit the end points of lines belong to each of the left and right side of lane with a first degree polynomial function using cv.polyfit() function. This results in two functions of x = a + by.
+10. Draw the lanes with the resulting polynomial functions, starting from the bottom of the image to the top end point detected.
 
----
-
-### Reflection
-
-###1. Describe your pipeline. As part of the description, explain how you modified the draw_lines() function.
-
-My pipeline consisted of 5 steps. First, I converted the images to grayscale, then I .... 
-
-In order to draw a single line on the left and right lanes, I modified the draw_lines() function by ...
-
-If you'd like to include images to show how the pipeline works, here is how to include an image: 
-
-![alt text][image1]
-
-
-###2. Identify potential shortcomings with your current pipeline
-
-
-One potential shortcoming would be what would happen when ... 
-
-Another shortcoming could be ...
-
-
-###3. Suggest possible improvements to your pipeline
-
-A possible improvement would be to ...
-
-Another potential improvement could be to ...
+# Issues Encountered And Resolutions
+There are few issues encountered during the course of the project that are worth describing here:
+## Bad Lane Detection
+The origin detection algorithm did not work well with lighting condition, marks or pigement on roads. Conditions like this caused extra contours from Canny filter, and results in lanes that are way off.
+### Solution
+The solution used, as described above, is to use HSV to extract white and yellow regions of the road to reduce the issues.
+### Further Improvements
+1. The current implement generates a mask from the HSV image, and use the mask to mask off the unwanted regions in the original image. However, the HSV color ranges used for the filter is constant. It might be better to adjust the intensity of filtering ranges with the average intensity in the ROI, or to normalize the image's intensity before applying the filter.
+2. Some image enhancement might also improve the detection, this is a possible area for future improvement
+## Classification of Lines
+Current implementation of line classification for the left and right sides of lanes simply compares the x coordinates with the middle of the images. This will not work for lanes that are not straight.
+### Further Improvements
+Further work should try to use a better classification algorithm, like SVM (Support Vector Machine)
