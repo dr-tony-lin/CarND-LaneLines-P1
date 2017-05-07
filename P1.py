@@ -1,89 +1,9 @@
 
-# coding: utf-8
-
-# # Self-Driving Car Engineer Nanodegree
-# 
-# 
-# ## Project: **Finding Lane Lines on the Road** 
-# ***
-# In this project, you will use the tools you learned about in the lesson to identify lane lines on the road.  You can develop your pipeline on a series of individual images, and later apply the result to a video stream (really just a series of images). Check out the video clip "raw-lines-example.mp4" (also contained in this repository) to see what the output should look like after using the helper functions below. 
-# 
-# Once you have a result that looks roughly like "raw-lines-example.mp4", you'll need to get creative and try to average and/or extrapolate the line segments you've detected to map out the full extent of the lane lines.  You can see an example of the result you're going for in the video "P1_example.mp4".  Ultimately, you would like to draw just one line for the left side of the lane, and one for the right.
-# 
-# In addition to implementing code, there is a brief writeup to complete. The writeup should be completed in a separate file, which can be either a markdown file or a pdf document. There is a [write up template](https://github.com/udacity/CarND-LaneLines-P1/blob/master/writeup_template.md) that can be used to guide the writing process. Completing both the code in the Ipython notebook and the writeup template will cover all of the [rubric points](https://review.udacity.com/#!/rubrics/322/view) for this project.
-# 
-# ---
-# Let's have a look at our first image called 'test_images/solidWhiteRight.jpg'.  Run the 2 cells below (hit Shift-Enter or the "play" button above) to display the image.
-# 
-# **Note: If, at any point, you encounter frozen display windows or other confounding issues, you can always start again with a clean slate by going to the "Kernel" menu above and selecting "Restart & Clear Output".**
-# 
-# ---
-
-# **The tools you have are color selection, region of interest selection, grayscaling, Gaussian smoothing, Canny Edge Detection and Hough Tranform line detection.  You  are also free to explore and try other techniques that were not presented in the lesson.  Your goal is piece together a pipeline to detect the line segments in the image, then average/extrapolate them and draw them onto the image for display (as below).  Once you have a working pipeline, try it out on the video stream below.**
-# 
-# ---
-# 
-# <figure>
-#  <img src="examples/line-segments-example.jpg" width="380" alt="Combined Image" />
-#  <figcaption>
-#  <p></p> 
-#  <p style="text-align: center;"> Your output should look something like this (above) after detecting line segments using the helper functions below </p> 
-#  </figcaption>
-# </figure>
-#  <p></p> 
-# <figure>
-#  <img src="examples/laneLines_thirdPass.jpg" width="380" alt="Combined Image" />
-#  <figcaption>
-#  <p></p> 
-#  <p style="text-align: center;"> Your goal is to connect/average/extrapolate line segments to get output like this</p> 
-#  </figcaption>
-# </figure>
-
-# **Run the cell below to import some packages.  If you get an `import error` for a package you've already installed, try changing your kernel (select the Kernel menu above --> Change Kernel).  Still have problems?  Try relaunching Jupyter Notebook from the terminal prompt.  Also, see [this forum post](https://carnd-forums.udacity.com/cq/viewquestion.action?spaceKey=CAR&id=29496372&questionTitle=finding-lanes---import-cv2-fails-even-though-python-in-the-terminal-window-has-no-problem-with-import-cv2) for more troubleshooting tips.**  
-
-# ## Import Packages
-
-# In[52]:
-
-#importing some useful packages
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import numpy as np
 import cv2
-get_ipython().magic('matplotlib inline')
-
-
-# ## Read in an Image
-
-# In[53]:
-
-#reading in an image
-image = mpimg.imread('test_images/solidWhiteRight.jpg')
-
-#printing out some stats and plotting
-print('This image is:', type(image), 'with dimensions:', image.shape)
-plt.imshow(image)  # if you wanted to show a single color channel image called 'gray', for example, call as plt.imshow(gray, cmap='gray')
-
-
-# ## Ideas for Lane Detection Pipeline
-
-# **Some OpenCV functions (beyond those introduced in the lesson) that might be useful for this project are:**
-# 
-# `cv2.inRange()` for color selection  
-# `cv2.fillPoly()` for regions selection  
-# `cv2.line()` to draw lines on an image given endpoints  
-# `cv2.addWeighted()` to coadd / overlay two images
-# `cv2.cvtColor()` to grayscale or change color
-# `cv2.imwrite()` to output images to file  
-# `cv2.bitwise_and()` to apply a mask to an image
-# 
-# **Check out the OpenCV documentation to learn about these and discover even more awesome functionality!**
-
-# ## Helper Functions
-
-# Below are some helper functions to help get you started. They should look familiar from the lesson!
-
-# In[54]:
+import sklearn as sk
 
 import math
 
@@ -147,15 +67,28 @@ def interpolate(lines, bottom, top):
         return []
     x = [a[0] for a in lines] + [a[2] for a in lines]
     y = [a[1] for a in lines] + [a[3] for a in lines]
-    z = np.polyfit(y, x, 1) # fit the points with x = f(y)
+
+    # weight points by their line length, penaltize relatively short lines
+    ylen = [abs(a[1] - a[3]) for a in lines]
+    min = np.min(ylen)
+    max = np.max(ylen)
+    if max - min < 1:
+        w = None
+    else:
+        w = np.exp((ylen - min)/(max - min) + 1.0)
+        w = np.repeat(w, 2) # each weight value is for two end points
+
+    z = np.polyfit(y[:], x, 1, w=w) # weighted linear polynominal fit of the points, y will be altered if not copied
     f = np.poly1d(z)
-    sorted(y, reverse=True)
-    if y[-1] > top:
-        y += [top]
-    lines = [(int(f(bottom)), bottom, int(f(y[0])), y[0])]
-    for i in range(len(y) - 1):
-        lines += [(int(f(y[i])), y[i], int(f(y[i + 1])), y[i + 1])]
-    return lines
+    ymin = np.min(y)
+    lines = []
+    try:
+         lines = [(int(f(ymin)), ymin, int(f(top)), top)]
+    except:
+        print("Exception occurs: ", z, ylen, min, max, w, lines)
+        return []
+    else:
+        return lines
 
 def draw_lines(img, lines, color=[255, 0, 0, 1], thickness=2):
     """
@@ -196,7 +129,7 @@ def draw_lines(img, lines, color=[255, 0, 0, 1], thickness=2):
             right += [line]
     
     # interpolate lines on the left(right) for the left(right) boundary of the lane
-    lines = interpolate(left, img.shape[0] - 1, img.shape[0]) + interpolate(right, img.shape[0] - 1, img.shape[0])
+    lines = interpolate(left, img.shape[1] - 1, img.shape[0]) + interpolate(right, img.shape[1] - 1, img.shape[0])
     
     # Draw the lines
     for line in lines:
@@ -234,53 +167,14 @@ def weighted_img(img, initial_img, α=0.8, β=1., λ=0.):
     return cv2.addWeighted(initial_img, α, img, β, λ)
 
 
-# ## Test Images
-# 
-# Build your pipeline to work on the images in the directory "test_images"  
-# **You should make sure your pipeline works well on these images before you try the videos.**
-
-# In[55]:
-
 import os
-os.listdir("test_images/")
-
-
-# ## Build a Lane Finding Pipeline
-# 
-# 
-
-# Build the pipeline and run your solution on all test_images. Make copies into the `test_images_output` directory, and you can use the images in your writeup report.
-# 
-# Try tuning the various parameters, especially the low and high Canny thresholds as well as the Hough lines parameters.
-
-# ## Test on Videos
-# 
-# You know what's cooler than drawing lanes over images? Drawing lanes over video!
-# 
-# We can test our solution on two provided videos:
-# 
-# `solidWhiteRight.mp4`
-# 
-# `solidYellowLeft.mp4`
-# 
-# **Note: if you get an `import error` when you run the next cell, try changing your kernel (select the Kernel menu above --> Change Kernel).  Still have problems?  Try relaunching Jupyter Notebook from the terminal prompt. Also, check out [this forum post](https://carnd-forums.udacity.com/questions/22677062/answers/22677109) for more troubleshooting tips.**
-# 
-# **If you get an error that looks like this:**
-# ```
-# NeedDownloadError: Need ffmpeg exe. 
-# You can download it by calling: 
-# imageio.plugins.ffmpeg.download()
-# ```
-# **Follow the instructions in the error message and check out [this forum post](https://carnd-forums.udacity.com/display/CAR/questions/26218840/import-videofileclip-error) for more troubleshooting tips across operating systems.**
-
-# In[63]:
 
 # In order to overcome issues caused by shadows and marks on the road, we will filter image by white and yellow
 # using HSV colorspace. The filter range is given by filter_ranges that contains three ranges. The first is for
 # pure white, the second is for near white which can be any color with low saturation, and the third for yellow
 hsv_ranges = [(np.array([0, 0, 120], dtype = "uint8"), np.array([0, 0, 255], dtype = "uint8")),
                 (np.array([0, 0, 220], dtype = "uint8"), np.array([180, 20, 255], dtype = "uint8")), 
-                (np.array([18, 50, 120], dtype = "uint8"), np.array([25, 255, 255], dtype = "uint8"))]
+                (np.array([18, 80, 120], dtype = "uint8"), np.array([25, 255, 255], dtype = "uint8"))]
 
 def rgb2hsv(img):
     """Applies the RGB to HSV transform"""
@@ -305,7 +199,7 @@ def find_lane(image, fig = None):
     Find lane in the image
     Fig: when given, images produced during the course of the processaing will be displayed
     '''
-
+    global clip_name, clip_seq
     width = image.shape[1] - 1
     height = image.shape[0] - 1
     gray_img = filter_hsv(image)
@@ -334,6 +228,8 @@ def find_lane(image, fig = None):
     if fig:
         fig.add_subplot(1,4,4)
         plt.imshow(lane_img)
+    if clip_name:
+        mpimg.imsave("test_images_output/{0}{1}-hough.jpg".format(clip_name, clip_seq), image)
     
     #put everything together
     return weighted_img(lane_img, image)
@@ -346,131 +242,52 @@ if not os.path.exists(test_videos_output):
 
 if not os.path.exists(test_images_output):
     os.makedirs(test_images_output)
-    
+
 for image in os.listdir("test_images/"):
     if image.endswith(".jpg") or image.endswith(".jpeg") or image.endswith(".png"):
         fig = plt.figure(figsize=(12, 48), dpi=80, facecolor='w', edgecolor='k')
         img = mpimg.imread("test_images/" + image)
         if img.shape[2] > 3:
             img = img[:,:,0:3]
+        image_name = image
         lane_img = find_lane(img, fig)
         fig = plt.figure(figsize=(12, 24), dpi=80, facecolor='w', edgecolor='k')
         fig.add_subplot(1,1,1)
         plt.imshow(lane_img)
         mpimg.imsave(test_images_output + image, lane_img)
-    
 
-
-# In[58]:
-
-# Import everything needed to edit/save/watch video clips
 from moviepy.editor import VideoFileClip
 from IPython.display import HTML
 
 clip_name = None
 clip_seq = 0
 
-
-# In[59]:
-
 def process_image(image):
     # NOTE: The output you return should be a color image (3 channel) for processing video below
     # TODO: put your pipeline here,
     # you should return the final output (image where lines are drawn on lanes)
-    global clip_seq
-    #mpimg.imsave("test_videos_output/{0}{1}.jpg".format(clip_name, clip_seq), image)
+    global clip_name, clip_seq
+    if clip_name:
+        mpimg.imsave("test_videos_output/{0}{1}.jpg".format(clip_name, clip_seq), image)
     clip_seq += 1
     img = find_lane(image)
     return img
-
-
-# Let's try the one with the solid white lane on the right first ...
-
-# In[147]:
 
 white_output = test_videos_output + 'solidWhiteRight.mp4'
 clip_name = "solidWhiteRight"
 clip_seq = 0
 clip1 = VideoFileClip("test_videos/solidWhiteRight.mp4")
 white_clip = clip1.fl_image(process_image) #NOTE: this function expects color images!!
-get_ipython().magic('time white_clip.write_videofile(white_output, audio=False)')
-
-
-# Play the video inline, or if you prefer find the video in your filesystem (should be in the same directory) and play it in your video player of choice.
-
-# In[148]:
-
-HTML("""
-<video width="960" height="540" controls>
-  <source src="{0}">
-</video>
-""".format(white_output))
-
-
-# ## Improve the draw_lines() function
-# 
-# **At this point, if you were successful with making the pipeline and tuning parameters, you probably have the Hough line segments drawn onto the road, but what about identifying the full extent of the lane and marking it clearly as in the example video (P1_example.mp4)?  Think about defining a line to run the full length of the visible lane based on the line segments you identified with the Hough Transform. As mentioned previously, try to average and/or extrapolate the line segments you've detected to map out the full extent of the lane lines. You can see an example of the result you're going for in the video "P1_example.mp4".**
-# 
-# **Go back and modify your draw_lines function accordingly and try re-running your pipeline. The new output should draw a single, solid line over the left lane line and a single, solid line over the right lane line. The lines should start from the bottom of the image and extend out to the top of the region of interest.**
-
-# Now for the one with the solid yellow lane on the left. This one's more tricky!
-
-# In[149]:
+white_clip.write_videofile(white_output, audio=False)
 
 yellow_output = test_videos_output + 'solidYellowLeft.mp4'
 clip_name = "solidWhiteRight"
 clip_seq = 0
 clip2 = VideoFileClip('test_videos/solidYellowLeft.mp4')
 yellow_clip = clip2.fl_image(process_image)
-get_ipython().magic('time yellow_clip.write_videofile(yellow_output, audio=False)')
-
-
-# In[150]:
-
-HTML("""
-<video width="960" height="540" controls>
-  <source src="{0}">
-</video>
-""".format(yellow_output))
-
-
-# ## Writeup and Submission
-# 
-# If you're satisfied with your video outputs, it's time to make the report writeup in a pdf or markdown file. Once you have this Ipython notebook ready along with the writeup, it's time to submit for review! Here is a [link](https://github.com/udacity/CarND-LaneLines-P1/blob/master/writeup_template.md) to the writeup template file.
-# 
-
-# ## Optional Challenge
-# 
-# Try your lane finding pipeline on the video below.  Does it still work?  Can you figure out a way to make it more robust?  If you're up for the challenge, modify your pipeline so it works with this video and submit it along with the rest of your project!
-
-# In[64]:
+yellow_clip.write_videofile(yellow_output, audio=False)
 
 challenge_output = 'test_videos_output/challenge.mp4'
 clip2 = VideoFileClip('test_videos/challenge.mp4')
 challenge_clip = clip2.fl_image(process_image)
-get_ipython().magic('time challenge_clip.write_videofile(challenge_output, audio=False)')
-
-
-# In[152]:
-
-HTML("""
-<video width="960" height="540" controls>
-  <source src="{0}">
-</video>
-""".format(challenge_output))
-
-
-# In[ ]:
-
-
-
-
-# In[ ]:
-
-
-
-
-# In[ ]:
-
-
-
+challenge_clip.write_videofile(challenge_output, audio=False)
